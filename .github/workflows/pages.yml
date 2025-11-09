@@ -1,0 +1,72 @@
+# .github/workflows/pages.yml
+name: Deploy Alnitak to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]     # baue bei Push auf main
+  workflow_dispatch:        # optional: manueller Start im Actions-Tab
+
+# Rechte für Pages-Deploy
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: yarn
+
+      - name: Install deps
+        run: yarn install --frozen-lockfile
+
+      # Je nach Scripts:
+      # 1) Probier zuerst den Standard:
+      - name: Build site
+        run: |
+          if yarn run -s build; then
+            echo "BUILD_CMD=build" >> $GITHUB_ENV
+          else
+            # Nx-Fallback (häufig bei diesem Repo-Typ):
+            yarn nx build alnitak --configuration=production || yarn nx build alnitak
+            echo "BUILD_CMD=nx" >> $GITHUB_ENV
+          fi
+
+      # Hilft zu sehen, wohin gebaut wurde (Logs):
+      - name: Inspect dist
+        run: |
+          ls -la
+          ls -la dist || true
+          ls -la dist/apps || true
+          ls -la dist/alnitak || true
+
+      # >>> WICHTIG: Wähle den richtigen Ausgabeordner <<<
+      # Meist ist es "dist" oder "dist/alnitak" oder "dist/apps/alnitak".
+      # Starte mit "dist", und wenn der Deploy leer ist, stell unten 'path' passend um.
+      - name: Upload artifact for Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
